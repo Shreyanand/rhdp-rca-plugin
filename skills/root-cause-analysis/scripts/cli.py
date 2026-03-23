@@ -118,6 +118,7 @@ def upload_analysis_to_jumpbox(analysis_dir: Path, config: Config) -> bool:
         print(f"  Error uploading to Jumpbox: {e}")
         return False
 
+
 def get_step_name(step: int) -> str:
     """Get descriptive name for step."""
     names = {
