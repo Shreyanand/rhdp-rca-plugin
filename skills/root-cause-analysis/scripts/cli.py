@@ -226,7 +226,7 @@ def cmd_analyze(args: argparse.Namespace, config: Config, span=None) -> int:
     if splunk_errors:
         print(f"Warning: Splunk configuration invalid: {', '.join(splunk_errors)}")
         print(
-            "  Steps 2-3 (Splunk log correlation) will be skipped. Set SPLUNK_HOST/SPLUNK_USERNAME/SPLUNK_PASSWORD in .claude/settings.json to enable."
+            "  Step 2 (Splunk log fetch) will be skipped. Set SPLUNK_HOST/SPLUNK_USERNAME/SPLUNK_PASSWORD in .claude/settings.json to enable."
         )
     skip_splunk = bool(splunk_errors)
 
@@ -273,9 +273,12 @@ def cmd_analyze(args: argparse.Namespace, config: Config, span=None) -> int:
         try:
             splunk_logs = fetch_correlated_logs(config, job_context)
             step2_path = save_step(analysis_dir, 2, splunk_logs)
-            print(f"  OCP logs: {len(splunk_logs.get('ocp_logs', []))}")
-            print(f"  Error logs: {len(splunk_logs.get('error_logs', []))}")
-            print(f"  Pods found: {len(splunk_logs.get('pods_found', []))}")
+            ocp_logs = splunk_logs.get("ocp_logs", [])
+            error_logs = splunk_logs.get("error_logs", [])
+            pods_found = splunk_logs.get("pods_found", [])
+            print(f"  OCP logs: {len(ocp_logs) if isinstance(ocp_logs, list) else 0}")
+            print(f"  Error logs: {len(error_logs) if isinstance(error_logs, list) else 0}")
+            print(f"  Pods found: {len(pods_found) if isinstance(pods_found, list) else 0}")
             print(f"  Output: {step2_path}")
         except Exception as e:
             print(f"  Error fetching Splunk logs: {e}")

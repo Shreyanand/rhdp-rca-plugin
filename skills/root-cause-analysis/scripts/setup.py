@@ -74,11 +74,11 @@ def check_job_logs_dir() -> dict:
         }
 
     path = Path(value)
-    if not path.exists():
+    if not path.is_dir():
         return {
             "name": "JOB_LOGS_DIR",
             "status": "error",
-            "message": f"Directory does not exist: {value}",
+            "message": f"Not a valid directory: {value}",
             "env_vars": [
                 {
                     "name": "JOB_LOGS_DIR",
@@ -424,10 +424,9 @@ def _start_ssh_tunnel(tracking_uri: str, jumpbox_uri: str) -> dict:
         return {"started": False, "message": f"Tunnel already running on port {port}"}
 
     try:
-        cmd = f"ssh -f -N -L {port}:127.0.0.1:{port} {jumpbox_uri}"
+        cmd = ["ssh", "-f", "-N", "-L", f"{port}:127.0.0.1:{port}"] + jumpbox_uri.split()
         result = subprocess.run(
             cmd,
-            shell=True,
             capture_output=True,
             text=True,
             timeout=15,
@@ -545,7 +544,7 @@ def check_session_hook(repo_root: Path) -> dict:
 def run_checks(base_dir: Path, repo_root: Path | None = None) -> list[dict]:
     """Run all preflight checks and return results."""
     if repo_root is None:
-        repo_root = base_dir.parent
+        repo_root = base_dir.parent.parent
 
     return [
         check_python_venv(base_dir),
