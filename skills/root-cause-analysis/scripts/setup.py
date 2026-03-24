@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-# Placeholder pattern — values that haven't been configured yet
+# Placeholder pattern -- values that haven't been configured yet
 PLACEHOLDER_PATTERN = "<"
 
 
@@ -90,6 +90,42 @@ def check_job_logs_dir() -> dict:
         }
 
     return {"name": "JOB_LOGS_DIR", "status": "ok", "message": value}
+
+
+def check_jumpbox() -> dict:
+    """Check JUMPBOX_URI configuration (required for uploading analysis and feedback)."""
+    value = os.environ.get("JUMPBOX_URI", "")
+    if is_placeholder(value):
+        return {
+            "name": "Jumpbox (upload)",
+            "status": "missing",
+            "message": "Not configured. Required for uploading analysis results and feedback. Set in .claude/settings.json",
+            "env_vars": [
+                {
+                    "name": "JUMPBOX_URI",
+                    "prompt": "SSH jumpbox connection (e.g. user@host -p port)",
+                }
+            ],
+            "configurable": True,
+        }
+
+    # Basic format validation: must contain @
+    if "@" not in value:
+        return {
+            "name": "Jumpbox (upload)",
+            "status": "error",
+            "message": f"Invalid format: '{value}'. Expected user@host or user@host -p port",
+            "env_vars": [
+                {
+                    "name": "JUMPBOX_URI",
+                    "prompt": "SSH jumpbox connection (e.g. user@host -p port)",
+                    "current": value,
+                }
+            ],
+            "configurable": True,
+        }
+
+    return {"name": "Jumpbox (upload)", "status": "ok", "message": value}
 
 
 def _ssh_host_exists(alias: str) -> bool:
@@ -262,15 +298,35 @@ def check_github_mcp(repo_root: Path) -> dict:
     return {"name": "GitHub MCP", "status": "ok", "message": "configured"}
 
 
+def _get_tracking_uri() -> str | None:
+    """Get MLflow tracking URI from env, deriving from MLFLOW_PORT if needed."""
+    uri = os.environ.get("MLFLOW_TRACKING_URI", "")
+    if uri and not is_placeholder(uri):
+        return uri
+    port = os.environ.get("MLFLOW_PORT", "")
+    if port and not is_placeholder(port):
+        return f"http://127.0.0.1:{port}"
+    return None
+
+
 def check_mlflow() -> dict:
     """Check MLFlow tracing configuration."""
+    port = os.environ.get("MLFLOW_PORT", "")
     enabled = os.environ.get("MLFLOW_CLAUDE_TRACING_ENABLED", "")
-    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "")
     experiment = os.environ.get("MLFLOW_EXPERIMENT_NAME", "")
-    jumpbox = os.environ.get("JUMPBOX_URI", "")
+    tag_user = os.environ.get("MLFLOW_TAG_USER", "")
 
     env_vars = []
     issues = []
+
+    if is_placeholder(port):
+        issues.append("MLFLOW_PORT not configured")
+        env_vars.append(
+            {
+                "name": "MLFLOW_PORT",
+                "prompt": "Localhost port for MLflow server (e.g. 5000)",
+            }
+        )
     if enabled.lower() != "true":
         issues.append("MLFLOW_CLAUDE_TRACING_ENABLED not set to 'true'")
         env_vars.append(
@@ -280,23 +336,19 @@ def check_mlflow() -> dict:
                 "default": "true",
             }
         )
-    if is_placeholder(tracking_uri):
-        issues.append("MLFLOW_TRACKING_URI not configured")
-        env_vars.append(
-            {
-                "name": "MLFLOW_TRACKING_URI",
-                "prompt": "MLFlow tracking server URL (e.g. http://127.0.0.1:5000)",
-            }
-        )
     if is_placeholder(experiment):
-        issues.append("EXPERIMENT_NAME not configured")
+        issues.append("MLFLOW_EXPERIMENT_NAME not configured")
         env_vars.append(
             {"name": "MLFLOW_EXPERIMENT_NAME", "prompt": "MLFlow experiment name for tracing"}
         )
-    if is_placeholder(jumpbox):
-        issues.append("JUMPBOX_URI not configured")
+    if is_placeholder(tag_user):
+        issues.append("MLFLOW_TAG_USER not configured")
         env_vars.append(
-            {"name": "JUMPBOX_URI", "prompt": "SSH tunnel jumpbox (e.g. user@jumpbox-host -p port)"}
+            {
+                "name": "MLFLOW_TAG_USER",
+                "prompt": "Username tag for MLflow traces",
+                "optional": True,
+            }
         )
 
     if issues:
@@ -311,7 +363,7 @@ def check_mlflow() -> dict:
     return {
         "name": "MLFlow",
         "status": "ok",
-        "message": f"uri={tracking_uri}, experiment={experiment}, jumpbox={jumpbox}",
+        "message": f"port={port}, experiment={experiment}",
     }
 
 
@@ -328,7 +380,6 @@ def _is_server_reachable(tracking_uri: str) -> bool:
         body = resp.read().decode("utf-8", errors="replace")
         return "mlflow" in body.lower() or "experiments" in body.lower()
     except urllib.error.HTTPError as e:
-        # MLFlow returns error JSON with "error_code" — check for it
         try:
             body = e.read().decode("utf-8", errors="replace")
             return "error_code" in body or "mlflow" in body.lower()
@@ -364,10 +415,7 @@ def _tunnel_already_running(port: str) -> bool:
 
 
 def _start_ssh_tunnel(tracking_uri: str, jumpbox_uri: str) -> dict:
-    """Attempt to start an SSH tunnel to the MLFlow server.
-
-    Returns a dict with status and message.
-    """
+    """Attempt to start an SSH tunnel to the MLFlow server."""
     port = _parse_uri_port(tracking_uri)
     if not port:
         return {"started": False, "message": f"Could not parse port from {tracking_uri}"}
@@ -411,25 +459,25 @@ def _kill_stale_tunnel(port: str) -> None:
 
 def check_mlflow_server() -> dict:
     """Check if MLFlow server is reachable. If not, attempt to start SSH tunnel."""
-    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "")
-    if is_placeholder(tracking_uri):
+    tracking_uri = _get_tracking_uri()
+    if not tracking_uri:
         return {
             "name": "MLFlow server",
             "status": "missing",
-            "message": "MLFLOW_TRACKING_URI not configured",
+            "message": "MLFLOW_PORT not configured",
         }
 
     # First check: is it already reachable?
     reachable = _is_server_reachable(tracking_uri)
 
     if not reachable:
-        # Not reachable — try to start SSH tunnel if JUMPBOX_URI is configured
+        # Not reachable -- try to start SSH tunnel if JUMPBOX_URI is configured
         jumpbox = os.environ.get("JUMPBOX_URI", "")
         if is_placeholder(jumpbox):
             return {
                 "name": "MLFlow server",
                 "status": "error",
-                "message": f"Cannot reach {tracking_uri}. Set JUMPBOX_URI in .claude/settings.json for SSH tunnel",
+                "message": f"Cannot reach {tracking_uri}. Set JUMPBOX_URI for SSH tunnel",
             }
 
         # Kill any stale tunnel before starting a fresh one
@@ -471,36 +519,21 @@ def check_session_hook(repo_root: Path) -> dict:
         }
 
     # Check if settings.json has the SessionStart hook registered
-    settings_path = repo_root / ".claude" / "settings.json"
-    if settings_path.exists():
-        try:
-            with open(settings_path) as f:
-                settings = json.load(f)
-            hooks = settings.get("hooks", {})
-            if "SessionStart" in hooks:
-                return {
-                    "name": "Session hook",
-                    "status": "ok",
-                    "message": "registered in settings.json",
-                }
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    # Also check settings.local.json
-    local_settings_path = repo_root / ".claude" / "settings.local.json"
-    if local_settings_path.exists():
-        try:
-            with open(local_settings_path) as f:
-                settings = json.load(f)
-            hooks = settings.get("hooks", {})
-            if "SessionStart" in hooks:
-                return {
-                    "name": "Session hook",
-                    "status": "ok",
-                    "message": "registered in settings.local.json",
-                }
-        except (json.JSONDecodeError, OSError):
-            pass
+    for settings_name in ["settings.json", "settings.local.json"]:
+        settings_path = repo_root / ".claude" / settings_name
+        if settings_path.exists():
+            try:
+                with open(settings_path) as f:
+                    settings = json.load(f)
+                hooks = settings.get("hooks", {})
+                if "SessionStart" in hooks:
+                    return {
+                        "name": "Session hook",
+                        "status": "ok",
+                        "message": f"registered in {settings_name}",
+                    }
+            except (json.JSONDecodeError, OSError):
+                pass
 
     return {
         "name": "Session hook",
@@ -517,6 +550,7 @@ def run_checks(base_dir: Path, repo_root: Path | None = None) -> list[dict]:
     return [
         check_python_venv(base_dir),
         check_job_logs_dir(),
+        check_jumpbox(),
         check_ssh(),
         check_splunk(),
         check_github(),
@@ -539,7 +573,7 @@ def print_checks(results: list[dict]) -> int:
     for r in results:
         icon = icons.get(r["status"], "[??]")
         pad = 20 - len(r["name"])
-        print(f"  {icon} {r['name']}{' ' * pad} {r['message']}")
+        print(f"  {icon} {r['name']}{' ' * max(pad, 1)} {r['message']}")
         if r["status"] != "ok":
             issues += 1
 

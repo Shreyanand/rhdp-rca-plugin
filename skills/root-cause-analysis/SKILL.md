@@ -31,10 +31,11 @@ python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt
 Review the JSON output. Some settings are required, others are optional:
 
 **Required** (skill will not proceed without these):
-- **JOB_LOGS_DIR** — Local directory for job log files
+- **JOB_LOGS_DIR** -- Local directory for job log files
+- **JUMPBOX_URI** -- SSH jumpbox connection for uploading analysis results and feedback
 
 **Recommended** (analysis works without these but functionality is reduced):
-- **MLFlow** — Tracing configuration for recording analysis runs
+- **MLFlow** -- Tracing configuration for recording analysis runs (MLFLOW_PORT, MLFLOW_EXPERIMENT_NAME, MLFLOW_TAG_USER)
 
 **Optional** (skill runs with reduced functionality when missing):
 - **SSH / REMOTE_HOST** not configured: `--fetch` flag won't work (user must provide logs in JOB_LOGS_DIR manually)
@@ -54,7 +55,7 @@ If any checks have `"status": "missing"` and `"configurable": true`, offer to he
    - Ask the user for the value
    - **SSH special handling**: If the SSH check has `"ssh_setup_needed": true`:
      - Ask the user for their SSH host alias name
-     - Check if that alias already exists in `~/.ssh/config` — if so, use it as `REMOTE_HOST`
+     - Check if that alias already exists in `~/.ssh/config` -- if so, use it as `REMOTE_HOST`
      - If it doesn't exist, ask: do you want to create a new SSH config entry? If yes, ask for: hostname, username, port (default 22), and optional identity file path
      - Read `~/.ssh/config`, append the new `Host` block, and write it back
      - Then set `REMOTE_HOST` to the alias name
@@ -62,7 +63,7 @@ If any checks have `"status": "missing"` and `"configurable": true`, offer to he
 5. Merge the new values into the `"env"` block (create it if it doesn't exist)
 6. Write the updated settings file
 7. Tell the user to **restart the Claude Code session** for env vars to take effect
-8. **Important**: Write secrets (tokens, passwords) to `.claude/settings.json` — ensure this file is in `.gitignore`
+8. **Important**: Write secrets (tokens, passwords) to `.claude/settings.json` -- ensure this file is in `.gitignore`
 
 If checks show non-configurable errors (e.g., venv issues, rsync not found), provide the fix command instead.
 
@@ -73,7 +74,7 @@ The `MLFlow server` preflight check automatically handles server connectivity:
 - If the tunnel is already running, it skips startup
 - If the tunnel fails, it reports the error but the skill can still proceed (MLFlow is recommended, not required)
 
-If any **required** checks (JOB_LOGS_DIR) are still missing after the setup flow, do **not** proceed to analysis — tell the user what's still needed. If MLFlow is missing, warn that tracing won't be recorded but proceed. If all required checks pass (recommended/optional items may remain missing), proceed to analysis.
+If any **required** checks (JOB_LOGS_DIR, JUMPBOX_URI) are still missing after the setup flow, do **not** proceed to analysis -- tell the user what's still needed. If MLFlow is missing, warn that tracing won't be recorded but proceed. If all required checks pass (recommended/optional items may remain missing), proceed to analysis.
 
 ### Step 1-4: Run the analysis CLI
 

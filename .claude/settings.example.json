@@ -1,5 +1,9 @@
 {
   "env": {
+    "JOB_LOGS_DIR": "<path-to-local-job-logs>",
+    "JUMPBOX_URI": "<username>@<jumpbox-host> -p <port>",
+    "REMOTE_HOST": "<ssh-host-alias>",
+    "REMOTE_DIR": "<remote-log-directory>",
     "SPLUNK_HOST": "<your-splunk-host-url>",
     "SPLUNK_USERNAME": "<your-splunk-username>",
     "SPLUNK_PASSWORD": "<your-splunk-password>",
@@ -8,13 +12,10 @@
     "SPLUNK_OCP_INFRA_INDEX": "<splunk-ocp-infra-index>",
     "SPLUNK_VERIFY_SSL": "false",
     "GITHUB_TOKEN": "<your-github-token>",
-    "JOB_LOGS_DIR": "<path-to-local-job-logs>",
-    "REMOTE_HOST": "<ssh-host-alias>",
-    "REMOTE_DIR": "<remote-log-directory>",
-    "JUMPBOX_URI": "<username>@<jumpbox-host> -p <port>",
+    "MLFLOW_PORT": "<localhost-port>",
+    "MLFLOW_EXPERIMENT_NAME": "<your-experiment-name>",
     "MLFLOW_CLAUDE_TRACING_ENABLED": "true",
-    "MLFLOW_TRACKING_URI": "http://127.0.0.1:5000",
-    "MLFLOW_EXPERIMENT_NAME": "<your-experiment-name>"
+    "MLFLOW_TAG_USER": "<your-username>"
   },
   "hooks": {
     "SessionStart": [
